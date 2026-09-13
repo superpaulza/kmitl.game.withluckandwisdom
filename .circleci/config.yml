@@ -11,7 +11,7 @@ orbs:
 executors:
   linux-dotnet:
     docker:
-      - image: mcr.microsoft.com/dotnet/sdk:8.0
+      - image: mcr.microsoft.com/dotnet/sdk:8.0-noble
     resource_class: large
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
@@ -24,6 +24,8 @@ executors:
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
+      DOTNET_ROOT: /Users/distiller/.dotnet
+      PATH: /Users/distiller/.dotnet:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 # =============================================================================
 # Jobs
@@ -65,13 +67,13 @@ jobs:
           command: apt-get update && apt-get install -y zip
       - restore_cache:
           keys:
-            - dotnet-restore-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-            - dotnet-restore-v3-
+            - dotnet-restore-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+            - dotnet-restore-v4-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
       - save_cache:
-          key: dotnet-restore-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+          key: dotnet-restore-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
@@ -94,26 +96,27 @@ jobs:
           command: |
             curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
             chmod +x dotnet-install.sh
-            ./dotnet-install.sh --channel 8.0 --install-dir $HOME/.dotnet
-            echo 'export PATH="$HOME/.dotnet:$PATH"' >> "$BASH_ENV"
-            echo 'export DOTNET_ROOT="$HOME/.dotnet"' >> "$BASH_ENV"
-      - restore_cache:
-          keys:
-            - dotnet-restore-mac-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-            - dotnet-restore-mac-v3-
+            ./dotnet-install.sh --channel 8.0 --install-dir /Users/distiller/.dotnet
       - run:
           name: Restore NuGet packages
-          command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
+          command: /Users/distiller/.dotnet/dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
+      - restore_cache:
+          keys:
+            - dotnet-restore-mac-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+            - dotnet-restore-mac-v4-
+      - run:
+          name: Restore NuGet packages (cached)
+          command: /Users/distiller/.dotnet/dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
       - save_cache:
-          key: dotnet-restore-mac-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+          key: dotnet-restore-mac-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
           name: Build for macOS (Intel)
-          command: dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-x64 --self-contained true -o artifacts/macos-x64
+          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-x64 --self-contained true -o artifacts/macos-x64
       - run:
           name: Build for macOS (Apple Silicon)
-          command: dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-arm64 --self-contained true -o artifacts/macos-arm64
+          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-arm64 --self-contained true -o artifacts/macos-arm64
       - run:
           name: Package macOS builds
           command: |
@@ -139,7 +142,6 @@ jobs:
             apt-get update && apt-get install -y openjdk-17-jdk wget unzip
             export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
             export PATH="$JAVA_HOME/bin:$PATH"
-            # Install Android SDK command line tools
             mkdir -p /opt/android-sdk/cmdline-tools
             cd /opt/android-sdk/cmdline-tools
             wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
@@ -157,13 +159,13 @@ jobs:
           command: dotnet workload install android
       - restore_cache:
           keys:
-            - dotnet-restore-android-v3-{{ checksum "Game.Android/Game.Android.csproj" }}
-            - dotnet-restore-android-v3-
+            - dotnet-restore-android-v4-{{ checksum "Game.Android/Game.Android.csproj" }}
+            - dotnet-restore-android-v4-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.Android/Game.Android.csproj
       - save_cache:
-          key: dotnet-restore-android-v3-{{ checksum "Game.Android/Game.Android.csproj" }}
+          key: dotnet-restore-android-v4-{{ checksum "Game.Android/Game.Android.csproj" }}
           paths:
             - ~/.nuget/packages
             - ~/.android
@@ -195,25 +197,23 @@ jobs:
           command: |
             curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
             chmod +x dotnet-install.sh
-            ./dotnet-install.sh --channel 8.0 --install-dir $HOME/.dotnet
-            echo 'export PATH="$HOME/.dotnet:$PATH"' >> "$BASH_ENV"
-            echo 'export DOTNET_ROOT="$HOME/.dotnet"' >> "$BASH_ENV"
-            dotnet workload install ios
+            ./dotnet-install.sh --channel 8.0 --install-dir /Users/distiller/.dotnet
+            /Users/distiller/.dotnet/dotnet workload install ios
       - restore_cache:
           keys:
-            - dotnet-restore-ios-v3-{{ checksum "Game.iOS/Game.iOS.csproj" }}
-            - dotnet-restore-ios-v3-
+            - dotnet-restore-ios-v4-{{ checksum "Game.iOS/Game.iOS.csproj" }}
+            - dotnet-restore-ios-v4-
       - run:
           name: Restore NuGet packages
-          command: dotnet restore Game.iOS/Game.iOS.csproj
+          command: /Users/distiller/.dotnet/dotnet restore Game.iOS/Game.iOS.csproj
       - save_cache:
-          key: dotnet-restore-ios-v3-{{ checksum "Game.iOS/Game.iOS.csproj" }}
+          key: dotnet-restore-ios-v4-{{ checksum "Game.iOS/Game.iOS.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
           name: Build iOS (unsigned)
           command: |
-            dotnet publish Game.iOS/Game.iOS.csproj \
+            /Users/distiller/.dotnet/dotnet publish Game.iOS/Game.iOS.csproj \
               -c Release \
               -r ios-arm64 \
               -o artifacts/ios \
