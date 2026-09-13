@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="'$(MONOGAME_SKIP_CONTENT)' == 'true'">
+    <BuildContent>false</BuildContent>
+  </PropertyGroup>
+</Project>

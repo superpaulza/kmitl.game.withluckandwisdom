@@ -5,13 +5,13 @@
     <AssemblyName>withLuckAndWisdomProject.Core</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <MonoGameContentReference Include="Content\Content.mgcb" />
+    <MonoGameContentReference Condition="'$(BuildContent)' != 'false'" Include="Content\Content.mgcb" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Aether.Physics2D.Diagnostics.MG" Version="1.6.1" />
     <PackageReference Include="Aether.Physics2D.MG" Version="1.6.1" />
     <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.8" />
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4.1" />
-    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.4.1" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
   </ItemGroup>
 </Project>

@@ -330,7 +330,7 @@
 /processorParam:TextureFormat=Compressed
 /build:Fonts/Pixel.spritefont
 
-#begin Images/background.jpg
+#begin Images/background.png
 /importer:TextureImporter
 /processor:TextureProcessor
 /processorParam:ColorKeyColor=255,0,255,255
@@ -340,7 +340,7 @@
 /processorParam:ResizeToPowerOfTwo=False
 /processorParam:MakeSquare=False
 /processorParam:TextureFormat=Color
-/build:Images/background.jpg
+/build:Images/background.png
 
 #begin Images/background2.jpg
 /importer:TextureImporter
@@ -354,7 +354,7 @@
 /processorParam:TextureFormat=Color
 /build:Images/background2.jpg
 
-#begin Images/background3.jpg
+#begin Images/background3.png
 /importer:TextureImporter
 /processor:TextureProcessor
 /processorParam:ColorKeyColor=255,0,255,255
@@ -364,7 +364,7 @@
 /processorParam:ResizeToPowerOfTwo=False
 /processorParam:MakeSquare=False
 /processorParam:TextureFormat=Color
-/build:Images/background3.jpg
+/build:Images/background3.png
 
 #begin Images/Bamboo.png
 /importer:TextureImporter

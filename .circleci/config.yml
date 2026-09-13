@@ -3,6 +3,11 @@ version: 2.1
 # =============================================================================
 # CircleCI Pipeline: With Luck And Wisdom - Multi-Platform Build
 # Builds: Windows, macOS, Linux (DesktopGL), Android, iOS
+#
+# Key design:
+#   - Content is built ONCE on Linux (where MGCB works reliably) and
+#     shared via workspaces to macOS/iOS/Android jobs which skip content building.
+#   - Windows, Linux build their own content on Linux Docker.
 # =============================================================================
 
 orbs:
@@ -11,7 +16,7 @@ orbs:
 executors:
   linux-dotnet:
     docker:
-      - image: mcr.microsoft.com/dotnet/sdk:8.0-noble
+      - image: mcr.microsoft.com/dotnet/sdk:9.0
     resource_class: large
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
@@ -24,15 +29,72 @@ executors:
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
+      MONOGAME_SKIP_CONTENT: "true"
       DOTNET_ROOT: /Users/distiller/.dotnet
       PATH: /Users/distiller/.dotnet:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+
+commands:
+  checkout_and_restore:
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - dotnet-v2-{{ checksum "Game.Core/Game.Core.csproj" }}
+            - dotnet-v2-
+
+  save_dotnet_cache:
+    steps:
+      - save_cache:
+          key: dotnet-v2-{{ checksum "Game.Core/Game.Core.csproj" }}
+          paths:
+            - ~/.nuget/packages
+
+  restore_mgcb_tool:
+    steps:
+      - run:
+          name: Restore MGCB content builder tool
+          command: dotnet tool restore || true
+
+  install_linux_deps:
+    steps:
+      - run:
+          name: Install native dependencies (Linux)
+          command: |
+            apt-get update && apt-get install -y \
+              libfreetype6 \
+              libpng16-16 \
+              libgl1-mesa-glx \
+              libgl1-mesa-dri \
+              ffmpeg \
+              zip \
+              || true
 
 # =============================================================================
 # Jobs
 # =============================================================================
 jobs:
   # ---------------------------------------------------------------------------
-  # DesktopGL Build (Windows, macOS, Linux)
+  # Build content on Linux (where MGCB FFmpeg works reliably)
+  # ---------------------------------------------------------------------------
+  build-content:
+    executor: linux-dotnet
+    steps:
+      - checkout_and_restore
+      - install_linux_deps
+      - restore_mgcb_tool
+      - run:
+          name: Build MGCB content
+          command: |
+            dotnet build Game.Core/Game.Core.csproj \
+              -c Release
+      - persist_to_workspace:
+          root: .
+          paths:
+            - Game.Core/Content/bin
+            - Game.Core/Content/obj
+
+  # ---------------------------------------------------------------------------
+  # DesktopGL Build (Windows, Linux)
   # ---------------------------------------------------------------------------
   build-desktop-windows:
     executor:
@@ -41,9 +103,11 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install .NET SDK 8.0
+          name: Install .NET SDK 9.0
           command: |
-            choco install dotnet-sdk --version=8.0.300 -y
+            choco install dotnet-sdk --version=9.0.100 -y
+      - attach_workspace:
+          at: .
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
@@ -61,21 +125,14 @@ jobs:
   build-desktop-linux:
     executor: linux-dotnet
     steps:
-      - checkout
-      - run:
-          name: Install zip
-          command: apt-get update && apt-get install -y zip
-      - restore_cache:
-          keys:
-            - dotnet-restore-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-            - dotnet-restore-v4-
+      - checkout_and_restore
+      - install_linux_deps
+      - restore_mgcb_tool
+      - attach_workspace:
+          at: .
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
-      - save_cache:
-          key: dotnet-restore-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-          paths:
-            - ~/.nuget/packages
       - run:
           name: Build for Linux
           command: dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r linux-x64 --self-contained true -o artifacts/linux
@@ -83,34 +140,30 @@ jobs:
           name: Package Linux build
           command: |
             cd artifacts/linux && zip -r ../with-luck-and-wisdom-linux-x64.zip . && cd ..
+      - save_dotnet_cache
       - store_artifacts:
           path: artifacts/with-luck-and-wisdom-linux-x64.zip
           destination: builds/linux
 
+  # ---------------------------------------------------------------------------
+  # macOS Build (Intel + Apple Silicon) - content pre-built on Linux
+  # ---------------------------------------------------------------------------
   build-desktop-macos:
     executor: macos-build
     steps:
       - checkout
       - run:
-          name: Install .NET SDK 8.0
+          name: Install .NET SDK 9.0
           command: |
             curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
             chmod +x dotnet-install.sh
-            ./dotnet-install.sh --channel 8.0 --install-dir /Users/distiller/.dotnet
+            ./dotnet-install.sh --channel 9.0 --install-dir /Users/distiller/.dotnet
+      - restore_mgcb_tool
+      - attach_workspace:
+          at: .
       - run:
           name: Restore NuGet packages
           command: /Users/distiller/.dotnet/dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
-      - restore_cache:
-          keys:
-            - dotnet-restore-mac-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-            - dotnet-restore-mac-v4-
-      - run:
-          name: Restore NuGet packages (cached)
-          command: /Users/distiller/.dotnet/dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
-      - save_cache:
-          key: dotnet-restore-mac-v4-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-          paths:
-            - ~/.nuget/packages
       - run:
           name: Build for macOS (Intel)
           command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-x64 --self-contained true -o artifacts/macos-x64
@@ -156,16 +209,19 @@ jobs:
             echo 'export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"' >> "$BASH_ENV"
       - run:
           name: Install Android workload
-          command: dotnet workload install android
+          command: dotnet workload install android --skip-manifest-update
+      - restore_mgcb_tool
+      - attach_workspace:
+          at: .
       - restore_cache:
           keys:
-            - dotnet-restore-android-v4-{{ checksum "Game.Android/Game.Android.csproj" }}
-            - dotnet-restore-android-v4-
+            - dotnet-restore-android-v5-{{ checksum "Game.Android/Game.Android.csproj" }}
+            - dotnet-restore-android-v5-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.Android/Game.Android.csproj
       - save_cache:
-          key: dotnet-restore-android-v4-{{ checksum "Game.Android/Game.Android.csproj" }}
+          key: dotnet-restore-android-v5-{{ checksum "Game.Android/Game.Android.csproj" }}
           paths:
             - ~/.nuget/packages
             - ~/.android
@@ -186,28 +242,31 @@ jobs:
           destination: builds/android
 
   # ---------------------------------------------------------------------------
-  # iOS Build (unsigned)
+  # iOS Build (unsigned) - content pre-built on Linux
   # ---------------------------------------------------------------------------
   build-ios:
     executor: macos-build
     steps:
       - checkout
       - run:
-          name: Install .NET SDK 8.0 and iOS workload
+          name: Install .NET SDK 9.0 and iOS workload
           command: |
             curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
             chmod +x dotnet-install.sh
-            ./dotnet-install.sh --channel 8.0 --install-dir /Users/distiller/.dotnet
-            /Users/distiller/.dotnet/dotnet workload install ios
+            ./dotnet-install.sh --channel 9.0 --install-dir /Users/distiller/.dotnet
+            /Users/distiller/.dotnet/dotnet workload install ios --skip-manifest-update
+      - restore_mgcb_tool
+      - attach_workspace:
+          at: .
       - restore_cache:
           keys:
-            - dotnet-restore-ios-v4-{{ checksum "Game.iOS/Game.iOS.csproj" }}
-            - dotnet-restore-ios-v4-
+            - dotnet-restore-ios-v5-{{ checksum "Game.iOS/Game.iOS.csproj" }}
+            - dotnet-restore-ios-v5-
       - run:
           name: Restore NuGet packages
           command: /Users/distiller/.dotnet/dotnet restore Game.iOS/Game.iOS.csproj
       - save_cache:
-          key: dotnet-restore-ios-v4-{{ checksum "Game.iOS/Game.iOS.csproj" }}
+          key: dotnet-restore-ios-v5-{{ checksum "Game.iOS/Game.iOS.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
@@ -234,40 +293,67 @@ jobs:
 workflows:
   build-all-platforms:
     jobs:
-      - build-desktop-linux
-      - build-desktop-macos
-      - build-desktop-windows
-      - build-android
-      - build-ios
+      - build-content
+      - build-desktop-linux:
+          requires:
+            - build-content
+      - build-desktop-macos:
+          requires:
+            - build-content
+      - build-desktop-windows:
+          requires:
+            - build-content
+      - build-android:
+          requires:
+            - build-content
+      - build-ios:
+          requires:
+            - build-content
 
   # Trigger on tags for release builds
   release-build:
     jobs:
+      - build-content:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
       - build-desktop-linux:
+          requires:
+            - build-content
           filters:
             branches:
               ignore: /.*/
             tags:
               only: /^v\d+\.\d+\.\d+$/
       - build-desktop-macos:
+          requires:
+            - build-content
           filters:
             branches:
               ignore: /.*/
             tags:
               only: /^v\d+\.\d+\.\d+$/
       - build-desktop-windows:
+          requires:
+            - build-content
           filters:
             branches:
               ignore: /.*/
             tags:
               only: /^v\d+\.\d+\.\d+$/
       - build-android:
+          requires:
+            - build-content
           filters:
             branches:
               ignore: /.*/
             tags:
               only: /^v\d+\.\d+\.\d+$/
       - build-ios:
+          requires:
+            - build-content
           filters:
             branches:
               ignore: /.*/
