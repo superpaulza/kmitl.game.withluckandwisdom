@@ -11,8 +11,9 @@ orbs:
 executors:
   linux-dotnet:
     docker:
-      - image: cimg/dotnet:8.0-node
+      - image: mcr.microsoft.com/dotnet/sdk:8.0
     resource_class: large
+    user: dotnet
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
@@ -60,15 +61,18 @@ jobs:
     executor: linux-dotnet
     steps:
       - checkout
+      - run:
+          name: Install zip
+          command: apt-get update && apt-get install -y zip
       - restore_cache:
           keys:
-            - dotnet-restore-v2-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-            - dotnet-restore-v2-
+            - dotnet-restore-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+            - dotnet-restore-v3-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
       - save_cache:
-          key: dotnet-restore-v2-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+          key: dotnet-restore-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
@@ -89,17 +93,20 @@ jobs:
       - run:
           name: Install .NET SDK 8.0
           command: |
-            curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 8.0 --install-dir /usr/local/share/dotnet
-            echo 'export PATH="/usr/local/share/dotnet:$PATH"' >> "$BASH_ENV"
+            curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+            chmod +x dotnet-install.sh
+            ./dotnet-install.sh --channel 8.0 --install-dir $HOME/.dotnet
+            echo 'export PATH="$HOME/.dotnet:$PATH"' >> "$BASH_ENV"
+            echo 'export DOTNET_ROOT="$HOME/.dotnet"' >> "$BASH_ENV"
       - restore_cache:
           keys:
-            - dotnet-restore-mac-v2-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
-            - dotnet-restore-mac-v2-
+            - dotnet-restore-mac-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+            - dotnet-restore-mac-v3-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
       - save_cache:
-          key: dotnet-restore-mac-v2-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
+          key: dotnet-restore-mac-v3-{{ checksum "Game.DesktopGL/Game.DesktopGL.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
@@ -128,21 +135,36 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Android workload and Java 17
+          name: Install Java 17 and Android SDK
           command: |
-            sudo apt-get update && sudo apt-get install -y openjdk-17-jdk
+            apt-get update && apt-get install -y openjdk-17-jdk wget unzip
+            export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+            export PATH="$JAVA_HOME/bin:$PATH"
+            # Install Android SDK command line tools
+            mkdir -p /opt/android-sdk/cmdline-tools
+            cd /opt/android-sdk/cmdline-tools
+            wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
+            unzip -q cmdline-tools.zip
+            mv cmdline-tools latest
+            export ANDROID_HOME=/opt/android-sdk
+            export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1
             echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> "$BASH_ENV"
-            echo 'export PATH="$JAVA_HOME/bin:$PATH"' >> "$BASH_ENV"
-            dotnet workload install android
+            echo 'export ANDROID_HOME=/opt/android-sdk' >> "$BASH_ENV"
+            echo 'export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"' >> "$BASH_ENV"
+      - run:
+          name: Install Android workload
+          command: dotnet workload install android
       - restore_cache:
           keys:
-            - dotnet-restore-android-v2-{{ checksum "Game.Android/Game.Android.csproj" }}
-            - dotnet-restore-android-v2-
+            - dotnet-restore-android-v3-{{ checksum "Game.Android/Game.Android.csproj" }}
+            - dotnet-restore-android-v3-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.Android/Game.Android.csproj
       - save_cache:
-          key: dotnet-restore-android-v2-{{ checksum "Game.Android/Game.Android.csproj" }}
+          key: dotnet-restore-android-v3-{{ checksum "Game.Android/Game.Android.csproj" }}
           paths:
             - ~/.nuget/packages
             - ~/.android
@@ -172,18 +194,21 @@ jobs:
       - run:
           name: Install .NET SDK 8.0 and iOS workload
           command: |
-            curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 8.0 --install-dir /usr/local/share/dotnet
-            echo 'export PATH="/usr/local/share/dotnet:$PATH"' >> "$BASH_ENV"
+            curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+            chmod +x dotnet-install.sh
+            ./dotnet-install.sh --channel 8.0 --install-dir $HOME/.dotnet
+            echo 'export PATH="$HOME/.dotnet:$PATH"' >> "$BASH_ENV"
+            echo 'export DOTNET_ROOT="$HOME/.dotnet"' >> "$BASH_ENV"
             dotnet workload install ios
       - restore_cache:
           keys:
-            - dotnet-restore-ios-v2-{{ checksum "Game.iOS/Game.iOS.csproj" }}
-            - dotnet-restore-ios-v2-
+            - dotnet-restore-ios-v3-{{ checksum "Game.iOS/Game.iOS.csproj" }}
+            - dotnet-restore-ios-v3-
       - run:
           name: Restore NuGet packages
           command: dotnet restore Game.iOS/Game.iOS.csproj
       - save_cache:
-          key: dotnet-restore-ios-v2-{{ checksum "Game.iOS/Game.iOS.csproj" }}
+          key: dotnet-restore-ios-v3-{{ checksum "Game.iOS/Game.iOS.csproj" }}
           paths:
             - ~/.nuget/packages
       - run:
