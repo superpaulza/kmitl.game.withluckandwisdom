@@ -23,4 +23,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Game.Core\Game.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Direct reference: Game.Core's MonoGame asset is PrivateAssets="all"
+         and does not flow transitively, so the head needs its own.
+         (Mirrors NOBOIShooter.DesktopGL.) -->
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5.1" />
+  </ItemGroup>
 </Project>
