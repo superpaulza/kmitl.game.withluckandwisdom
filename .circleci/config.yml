@@ -8,6 +8,8 @@ version: 2.1
 #   - Content is built ONCE on Linux (where MGCB works reliably) and
 #     shared via workspaces to macOS/iOS/Android jobs which skip content building.
 #   - Windows, Linux build their own content on Linux Docker.
+#   - macOS artifacts ship as signed .app bundles (Finder-double-clickable),
+#     not loose binaries.
 # =============================================================================
 
 orbs:
@@ -21,15 +23,19 @@ executors:
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
+      # .NET 9 TerminalLogger crashes (MSB4017) on CircleCI's pty; use console logger
+      MSBUILDTERMINALLOGGER: "off"
 
   macos-build:
     macos:
-      xcode: "15.4.0"
+      xcode: "16.4.0"
     resource_class: macos.m1.medium.gen1
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
       MONOGAME_SKIP_CONTENT: "true"
+      # .NET 9 TerminalLogger crashes (MSB4017) on CircleCI's pty; use console logger
+      MSBUILDTERMINALLOGGER: "off"
       DOTNET_ROOT: /Users/distiller/.dotnet
       PATH: /Users/distiller/.dotnet:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
@@ -110,10 +116,10 @@ jobs:
           at: .
       - run:
           name: Restore NuGet packages
-          command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
+          command: $env:MSBUILDTERMINALLOGGER = 'off'; dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
       - run:
           name: Build for Windows
-          command: dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r win-x64 --self-contained true -o artifacts/windows
+          command: $env:MSBUILDTERMINALLOGGER = 'off'; dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r win-x64 --self-contained true -o artifacts/windows
       - run:
           name: Package Windows build
           command: |
@@ -166,15 +172,24 @@ jobs:
           command: /Users/distiller/.dotnet/dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
       - run:
           name: Build for macOS (Intel)
-          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-x64 --self-contained true -o artifacts/macos-x64
+          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-x64 --self-contained true -p:BuildContent=false -p:EnableMGCBItems=false -o artifacts/macos-x64
       - run:
           name: Build for macOS (Apple Silicon)
-          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-arm64 --self-contained true -o artifacts/macos-arm64
+          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-arm64 --self-contained true -p:BuildContent=false -p:EnableMGCBItems=false -o artifacts/macos-arm64
       - run:
-          name: Package macOS builds
+          name: Bundle macOS .app and package artifacts
           command: |
-            cd artifacts/macos-x64 && zip -r ../with-luck-and-wisdom-macos-x64.zip . && cd ..
-            cd artifacts/macos-arm64 && zip -r ../with-luck-and-wisdom-macos-arm64.zip . && cd ..
+            for arch in x64 arm64; do
+              APP="artifacts/with-luck-and-wisdom-macos-$arch.app"
+              mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+              cp Game.DesktopGL/Info.plist "$APP/Contents/Info.plist"
+              cp -R "artifacts/macos-$arch/." "$APP/Contents/MacOS/"
+              chmod +x "$APP/Contents/MacOS/Game.DesktopGL"
+              # Ad-hoc sign so the bundle launches on a Mac
+              # (first launch: right-click > Open to bypass Gatekeeper for unsigned builds)
+              codesign --force --deep --sign - "$APP" || true
+              ditto -c -k --keepParent "$APP" "artifacts/with-luck-and-wisdom-macos-$arch.zip"
+            done
       - store_artifacts:
           path: artifacts/with-luck-and-wisdom-macos-x64.zip
           destination: builds/macos-x64
@@ -276,6 +291,8 @@ jobs:
               -c Release \
               -r ios-arm64 \
               -o artifacts/ios \
+              -p:BuildContent=false \
+              -p:EnableMGCBItems=false \
               /p:BuildIpa=true \
               /p:CodesignKey="-" \
               /p:CodesignProvision="-"

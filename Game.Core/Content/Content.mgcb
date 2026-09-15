@@ -582,7 +582,7 @@
 /processorParam:TextureFormat=Color
 /build:Images/leaderboard.png
 
-#begin Images/Logo.jpg
+#begin Images/logo.jpg
 /importer:TextureImporter
 /processor:TextureProcessor
 /processorParam:ColorKeyColor=255,0,255,255
@@ -592,7 +592,7 @@
 /processorParam:ResizeToPowerOfTwo=False
 /processorParam:MakeSquare=False
 /processorParam:TextureFormat=Color
-/build:Images/Logo.jpg
+/build:Images/logo.jpg
 
 #begin Images/logo-first.png
 /importer:TextureImporter

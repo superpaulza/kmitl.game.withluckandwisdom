@@ -1,14 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-android</TargetFramework>
+    <TargetFramework>net9.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
     <RootNamespace>withLuckAndWisdomProject.Android</RootNamespace>
     <ApplicationId>com.kmitl.game.withluckandwisdom</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.5.1" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Game.Core\Game.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <MonoGameContentReference Condition="'$(BuildContent)' != 'false'" Include="..\Game.Core\Content\Content.mgcb" />
   </ItemGroup>
 </Project>

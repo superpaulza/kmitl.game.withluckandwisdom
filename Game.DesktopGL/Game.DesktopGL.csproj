@@ -1,11 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <!-- Exe everywhere so macOS/Linux get a runnable apphost; WinExe only
+         for Windows targets (hides the console window). -->
+    <OutputType>Exe</OutputType>
+    <OutputType Condition="$(RuntimeIdentifier.StartsWith('win'))">WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <PublishReadyToRun>false</PublishReadyToRun>
     <TieredCompilation>false</TieredCompilation>
-    <ApplicationIcon>icon.ico</ApplicationIcon>
     <StartupObject>withLuckAndWisdomProject.Program</StartupObject>
+  </PropertyGroup>
+  <!-- Windows-only: app.manifest (UAC/DPI) and .ico only apply when
+       publishing for Windows. Applied unconditionally they leak into
+       macOS/Linux builds. -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="icon.ico" />

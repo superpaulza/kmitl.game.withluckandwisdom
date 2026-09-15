@@ -11,7 +11,13 @@
     <PackageReference Include="Aether.Physics2D.Diagnostics.MG" Version="1.6.1" />
     <PackageReference Include="Aether.Physics2D.MG" Version="1.6.1" />
     <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.8" />
-    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4.1" />
+    <!-- PrivateAssets=all: Core compiles against the DesktopGL-flavored
+         MonoGame.Framework.dll, but that asset must NOT flow into the
+         Android/iOS heads — each head references its own platform package.
+         Without this, two same-identity MonoGame.Framework.dlls reach the
+         mobile compiles and the DesktopGL one wins, hiding platform-only
+         types like AndroidGameActivity (CS0246). -->
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4.1" PrivateAssets="all" />
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
   </ItemGroup>
 </Project>
