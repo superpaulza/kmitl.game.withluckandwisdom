@@ -13,7 +13,7 @@
         public bool IsEnableSFX = true;
         public bool IsEnableBGM = true;
         public bool IsEnableAimer = true;
-        public bool IsShareDataToDev = true;
+        public bool IsShareDataToDev = false;
 
         //Base of singleton
         private static Singleton s_instance;

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -26,9 +25,15 @@ namespace withLuckAndWisdomProject.Screens
         public OptionsScreen()
         {
             //load save settings
-            if (File.Exists("GameSetting.config"))
+            _settings = FileManager.Exists("GameSetting.config")
+                ? FileManager.ReadFromJson<Settings>("GameSetting.config")
+                : null;
+            if (_settings == null)
             {
-                _settings = (Settings)FileManager.ReadFromObj("GameSetting.config");
+                _settings = new Settings();
+            }
+            else
+            {
                 //load settings
                 Singleton.Instance.SFXVolume = _settings.gameSFXSound;
                 Singleton.Instance.BGMVolume = _settings.gameMainSound;
@@ -37,10 +42,6 @@ namespace withLuckAndWisdomProject.Screens
                 Singleton.Instance.IsEnableBGM = _settings.IsEnableBGM;
                 Singleton.Instance.IsShareDataToDev = _settings.IsShareDataToDev;
 
-            }
-            else
-            {
-                _settings = new Settings();
             }
 
             _background = ResourceManager.mainBackground;
@@ -331,7 +332,7 @@ namespace withLuckAndWisdomProject.Screens
             _settings.IsEnableSFX = Singleton.Instance.IsEnableSFX;
             _settings.IsEnableBGM = Singleton.Instance.IsEnableBGM;
             _settings.IsShareDataToDev = Singleton.Instance.IsShareDataToDev;
-            FileManager.WriteToObj("GameSetting.config", _settings);
+            FileManager.WriteToJson("GameSetting.config", _settings);
         }
     }
 }

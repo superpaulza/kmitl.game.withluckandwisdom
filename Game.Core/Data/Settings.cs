@@ -5,7 +5,7 @@ using System.Text;
 namespace withLuckAndWisdomProject
 {
     [Serializable]
-    class Settings
+    public class Settings
     {
         public float gameMainSound;
         public float gameSFXSound;

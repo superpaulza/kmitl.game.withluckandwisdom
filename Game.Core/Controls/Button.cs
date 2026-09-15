@@ -2,7 +2,6 @@
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 using System;
 using System.Threading;
 
@@ -10,17 +9,13 @@ namespace withLuckAndWisdomProject.Controls
 {
     public class Button : Component
     {
-        private MouseState _currentMouse;
+        private bool _wasPressed;
 
         private SpriteFont _font;
 
         private bool _isHovering;
 
-        private MouseState _previousMouse;
-
         private Texture2D _texture;
-
-        private Rectangle mouseRectangle;
 
         public Color colour { get; set; }
 
@@ -85,25 +80,20 @@ namespace withLuckAndWisdomProject.Controls
 
         public override void Update(GameTime gameTime)
         {
-            _previousMouse = _currentMouse;
-            _currentMouse = Mouse.GetState();
+            // Unified mouse (desktop) + touch (mobile) pointer.
+            PointerState pointer = PointerHelper.GetState();
 
-            mouseRectangle = new Rectangle(_currentMouse.X, _currentMouse.Y, 1, 1);
+            _isHovering = Rectangle.Contains(pointer.Position);
 
-            _isHovering = false;
-
-            if (mouseRectangle.Intersects(Rectangle))
+            if (_isHovering && !pointer.IsPressed && _wasPressed)
             {
-                _isHovering = true;
-
-                if (_currentMouse.LeftButton == ButtonState.Released && _previousMouse.LeftButton == ButtonState.Pressed)
-                {
-                    AudioManager.PlaySound("MC");
-                    //naive fix sound delay
-                    Thread.Sleep(100);
-                    Click?.Invoke(this, new EventArgs());
-                }
+                AudioManager.PlaySound("MC");
+                //naive fix sound delay
+                Thread.Sleep(100);
+                Click?.Invoke(this, new EventArgs());
             }
+
+            _wasPressed = pointer.IsPressed;
         }
     }
 }

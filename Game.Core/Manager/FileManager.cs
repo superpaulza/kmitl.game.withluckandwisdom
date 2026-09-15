@@ -1,43 +1,74 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
-using System.Runtime.Serialization;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Text;
+using System.Text.Json;
 
 namespace withLuckAndWisdomProject
 {
     public class FileManager
     {
-        //set file path
-        private static string saveToDir = Environment.CurrentDirectory;
+        // Writable on every platform: the current directory is NOT writable
+        // on Android ("/") or iOS (app bundle). Personal maps to the
+        // app-private files dir on Android, Documents on iOS, and the
+        // user's Documents folder on desktop.
+        private static readonly string saveToDir =
+            Environment.GetFolderPath(Environment.SpecialFolder.Personal);
 
-        public static object ReadFromObj(string path)
+        private static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions
         {
-            object obj;
-            string pathToPref = Path.Combine(saveToDir, path);
-            if (File.Exists(pathToPref))
-            {
-                IFormatter formatter = new BinaryFormatter();
-                Stream stream = new FileStream(pathToPref, FileMode.Open, FileAccess.Read, FileShare.Read);
-                obj = formatter.Deserialize(stream);
-                stream.Close();
-            }
-            else
-            {
-                return null;
-            }
+            WriteIndented = true,
+            // Settings persists public fields, not properties.
+            IncludeFields = true,
+            PropertyNameCaseInsensitive = true,
+        };
 
-            return obj;
+        private static string GetPath(string fileName)
+        {
+            return Path.Combine(saveToDir, fileName);
         }
 
-        public static void WriteToObj(string path, object obj)
+        public static bool Exists(string fileName)
         {
-            string pathToPref = Path.Combine(saveToDir, path);
-            IFormatter formatter = new BinaryFormatter();
-            Stream stream = new FileStream(pathToPref, FileMode.Create, FileAccess.Write, FileShare.None);
-            formatter.Serialize(stream, obj);
-            stream.Close();
+            try
+            {
+                return File.Exists(GetPath(fileName));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("An error occurred while checking save file: " + ex.Message);
+                return false;
+            }
+        }
+
+        public static T ReadFromJson<T>(string fileName) where T : class
+        {
+            try
+            {
+                string path = GetPath(fileName);
+                if (!File.Exists(path))
+                    return null;
+                string json = File.ReadAllText(path);
+                return JsonSerializer.Deserialize<T>(json, jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("An error occurred while loading save file: " + ex.Message);
+                return null;
+            }
+        }
+
+        public static void WriteToJson<T>(string fileName, T obj)
+        {
+            try
+            {
+                Directory.CreateDirectory(saveToDir);
+                string json = JsonSerializer.Serialize(obj, jsonOptions);
+                File.WriteAllText(GetPath(fileName), json);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("An error occurred while saving file: " + ex.Message);
+            }
         }
     }
 }

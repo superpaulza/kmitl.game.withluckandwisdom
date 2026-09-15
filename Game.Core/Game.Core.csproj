@@ -17,7 +17,7 @@
          Without this, two same-identity MonoGame.Framework.dlls reach the
          mobile compiles and the DesktopGL one wins, hiding platform-only
          types like AndroidGameActivity (CS0246). -->
-    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4.1" PrivateAssets="all" />
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5.1" PrivateAssets="all" />
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.1.303" />
   </ItemGroup>
 </Project>

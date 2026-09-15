@@ -1,43 +1,41 @@
 version: 2.1
 
 # =============================================================================
-# CircleCI Pipeline: With Luck And Wisdom - Multi-Platform Build
-# Builds: Windows, macOS, Linux (DesktopGL), Android, iOS
+# CircleCI Multi-Platform Build Pipeline for With Luck And Wisdom (MonoGame)
+# =============================================================================
+# Builds: Windows, Linux, macOS (x64 + arm64), Android, iOS
 #
-# Key design:
-#   - Content is built ONCE on Linux (where MGCB works reliably) and
-#     shared via workspaces to macOS/iOS/Android jobs which skip content building.
-#   - Windows, Linux build their own content on Linux Docker.
+# Key design (mirrors NOBOIShooter):
+#   - Content is built ONCE on Linux (where MGCB FFmpeg works reliably) and
+#     shared via workspaces to macOS/iOS jobs which skip content building.
+#   - Windows, Linux, Android build their own content on Linux Docker.
+#   - macOS/iOS attach the workspace and compile code only (/p:BuildContent=false).
 #   - macOS artifacts ship as signed .app bundles (Finder-double-clickable),
 #     not loose binaries.
 # =============================================================================
 
-orbs:
-  win: circleci/windows@5.0
-
 executors:
-  linux-dotnet:
+  dotnet:
     docker:
       - image: mcr.microsoft.com/dotnet/sdk:9.0
-    resource_class: large
+    working_directory: ~/repo
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
       # .NET 9 TerminalLogger crashes (MSB4017) on CircleCI's pty; use console logger
       MSBUILDTERMINALLOGGER: "off"
 
-  macos-build:
+  macos:
     macos:
       xcode: "16.4.0"
     resource_class: macos.m1.medium.gen1
+    working_directory: ~/repo
     environment:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_NOLOGO: 1
       MONOGAME_SKIP_CONTENT: "true"
       # .NET 9 TerminalLogger crashes (MSB4017) on CircleCI's pty; use console logger
       MSBUILDTERMINALLOGGER: "off"
-      DOTNET_ROOT: /Users/distiller/.dotnet
-      PATH: /Users/distiller/.dotnet:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 commands:
   checkout_and_restore:
@@ -45,15 +43,16 @@ commands:
       - checkout
       - restore_cache:
           keys:
-            - dotnet-v2-{{ checksum "Game.Core/Game.Core.csproj" }}
-            - dotnet-v2-
+            - dotnet-v6-{{ checksum "Game.Core/Game.Core.csproj" }}
+            - dotnet-v6-
 
   save_dotnet_cache:
     steps:
       - save_cache:
-          key: dotnet-v2-{{ checksum "Game.Core/Game.Core.csproj" }}
+          key: dotnet-v6-{{ checksum "Game.Core/Game.Core.csproj" }}
           paths:
             - ~/.nuget/packages
+            - ~/.dotnet
 
   restore_mgcb_tool:
     steps:
@@ -75,15 +74,74 @@ commands:
               zip \
               || true
 
-# =============================================================================
-# Jobs
-# =============================================================================
+  install_macos_deps:
+    steps:
+      - run:
+          name: Install .NET SDK and native dependencies (macOS)
+          command: |
+            # Install .NET SDK
+            if ! command -v dotnet &> /dev/null; then
+              curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+              chmod +x /tmp/dotnet-install.sh
+              /tmp/dotnet-install.sh --channel 9.0
+              echo 'export PATH="$HOME/.dotnet:$PATH"' >> "$BASH_ENV"
+              export PATH="$HOME/.dotnet:$PATH"
+            fi
+            # Install native deps
+            brew install freeimage freetype libpng ffmpeg || true
+            BREW_LIB=$(brew --prefix)/lib
+            # Create symlinks for FreeImage
+            for name in FreeImage freeimage; do
+              for ext in dylib tbd; do
+                src="$BREW_LIB/lib${name}.${ext}"
+                dst="$BREW_LIB/${name}.${ext}"
+                if [ -f "$src" ] && [ ! -e "$dst" ]; then
+                  ln -s "$src" "$dst"
+                fi
+              done
+            done
+            # Create symlinks for freetype6
+            for ext in dylib tbd; do
+              src="$BREW_LIB/libfreetype.${ext}"
+              dst="$BREW_LIB/freetype6.${ext}"
+              if [ -f "$src" ] && [ ! -e "$dst" ]; then
+                ln -s "$src" "$dst"
+              fi
+            done
+
+  install_android_sdk:
+    steps:
+      - run:
+          name: Install Java and Android SDK
+          command: |
+            export ANDROID_HOME=/opt/android-sdk
+            echo "export ANDROID_HOME=/opt/android-sdk" >> "$BASH_ENV"
+            echo "export ANDROID_SDK_ROOT=/opt/android-sdk" >> "$BASH_ENV"
+            apt-get update && apt-get install -y unzip curl openjdk-17-jdk-headless
+            export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+            echo "export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> "$BASH_ENV"
+            if [ ! -d "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+              mkdir -p $ANDROID_HOME
+              cd /tmp
+              # Retry + resume: dl.google.com intermittently resets long
+              # HTTP/2 streams mid-download (curl exit 92 seen in CI)
+              curl -fSL --retry 5 --retry-all-errors --retry-delay 5 -C - \
+                -o commandlinetools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+              unzip -q -o commandlinetools.zip
+              mkdir -p $ANDROID_HOME/cmdline-tools
+              rm -rf $ANDROID_HOME/cmdline-tools/latest
+              mv cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+              yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+              $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+            fi
+            java -version 2>&1 || true
+
 jobs:
-  # ---------------------------------------------------------------------------
+  # =========================================================================
   # Build content on Linux (where MGCB FFmpeg works reliably)
-  # ---------------------------------------------------------------------------
+  # =========================================================================
   build-content:
-    executor: linux-dotnet
+    executor: dotnet
     steps:
       - checkout_and_restore
       - install_linux_deps
@@ -91,45 +149,20 @@ jobs:
       - run:
           name: Build MGCB content
           command: |
-            dotnet build Game.Core/Game.Core.csproj \
-              -c Release
+            dotnet build Game.DesktopGL/Game.DesktopGL.csproj \
+              -c Release \
+              -p:BuildContent=true
       - persist_to_workspace:
           root: .
           paths:
             - Game.Core/Content/bin
             - Game.Core/Content/obj
 
-  # ---------------------------------------------------------------------------
-  # DesktopGL Build (Windows, Linux)
-  # ---------------------------------------------------------------------------
-  build-desktop-windows:
-    executor:
-      name: win/default
-      size: large
-    steps:
-      - checkout
-      - run:
-          name: Install .NET SDK 9.0
-          command: |
-            choco install dotnet-sdk --version=9.0.100 -y
-      - attach_workspace:
-          at: .
-      - run:
-          name: Restore NuGet packages
-          command: $env:MSBUILDTERMINALLOGGER = 'off'; dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
-      - run:
-          name: Build for Windows
-          command: $env:MSBUILDTERMINALLOGGER = 'off'; dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r win-x64 --self-contained true -o artifacts/windows
-      - run:
-          name: Package Windows build
-          command: |
-            Compress-Archive -Path artifacts/windows\* -DestinationPath artifacts/with-luck-and-wisdom-windows-x64.zip
-      - store_artifacts:
-          path: artifacts/with-luck-and-wisdom-windows-x64.zip
-          destination: builds/windows
-
-  build-desktop-linux:
-    executor: linux-dotnet
+  # =========================================================================
+  # Windows build (cross-compiled from Linux Docker)
+  # =========================================================================
+  build-windows:
+    executor: dotnet
     steps:
       - checkout_and_restore
       - install_linux_deps
@@ -137,187 +170,228 @@ jobs:
       - attach_workspace:
           at: .
       - run:
-          name: Restore NuGet packages
-          command: dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
-      - run:
-          name: Build for Linux
-          command: dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r linux-x64 --self-contained true -o artifacts/linux
-      - run:
-          name: Package Linux build
+          name: Publish Windows x64
           command: |
-            cd artifacts/linux && zip -r ../with-luck-and-wisdom-linux-x64.zip . && cd ..
+            dotnet publish Game.DesktopGL/Game.DesktopGL.csproj \
+              -r win-x64 \
+              --self-contained \
+              -c Release \
+              -o artifacts/win-x64
+      - run:
+          name: Package Windows artifact
+          command: |
+            cd artifacts/win-x64
+            zip -r ../with-luck-and-wisdom-win-x64.zip .
       - save_dotnet_cache
       - store_artifacts:
-          path: artifacts/with-luck-and-wisdom-linux-x64.zip
-          destination: builds/linux
+          path: artifacts/with-luck-and-wisdom-win-x64.zip
+          destination: builds/with-luck-and-wisdom-win-x64.zip
 
-  # ---------------------------------------------------------------------------
-  # macOS Build (Intel + Apple Silicon) - content pre-built on Linux
-  # ---------------------------------------------------------------------------
-  build-desktop-macos:
-    executor: macos-build
+  # =========================================================================
+  # Linux build
+  # =========================================================================
+  build-linux:
+    executor: dotnet
     steps:
-      - checkout
-      - run:
-          name: Install .NET SDK 9.0
-          command: |
-            curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
-            chmod +x dotnet-install.sh
-            ./dotnet-install.sh --channel 9.0 --install-dir /Users/distiller/.dotnet
+      - checkout_and_restore
+      - install_linux_deps
       - restore_mgcb_tool
       - attach_workspace:
           at: .
       - run:
-          name: Restore NuGet packages
-          command: /Users/distiller/.dotnet/dotnet restore Game.DesktopGL/Game.DesktopGL.csproj
-      - run:
-          name: Build for macOS (Intel)
-          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-x64 --self-contained true -p:BuildContent=false -p:EnableMGCBItems=false -o artifacts/macos-x64
-      - run:
-          name: Build for macOS (Apple Silicon)
-          command: /Users/distiller/.dotnet/dotnet publish Game.DesktopGL/Game.DesktopGL.csproj -c Release -r osx-arm64 --self-contained true -p:BuildContent=false -p:EnableMGCBItems=false -o artifacts/macos-arm64
-      - run:
-          name: Bundle macOS .app and package artifacts
+          name: Publish Linux x64
           command: |
-            for arch in x64 arm64; do
-              APP="artifacts/with-luck-and-wisdom-macos-$arch.app"
-              mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-              cp Game.DesktopGL/Info.plist "$APP/Contents/Info.plist"
-              cp -R "artifacts/macos-$arch/." "$APP/Contents/MacOS/"
-              chmod +x "$APP/Contents/MacOS/Game.DesktopGL"
-              # Ad-hoc sign so the bundle launches on a Mac
-              # (first launch: right-click > Open to bypass Gatekeeper for unsigned builds)
-              codesign --force --deep --sign - "$APP" || true
-              ditto -c -k --keepParent "$APP" "artifacts/with-luck-and-wisdom-macos-$arch.zip"
-            done
+            dotnet publish Game.DesktopGL/Game.DesktopGL.csproj \
+              -r linux-x64 \
+              --self-contained \
+              -c Release \
+              -o artifacts/linux-x64
+      - run:
+          name: Package Linux artifact
+          command: |
+            cd artifacts/linux-x64
+            tar -czf ../with-luck-and-wisdom-linux-x64.tar.gz .
+      - save_dotnet_cache
       - store_artifacts:
-          path: artifacts/with-luck-and-wisdom-macos-x64.zip
-          destination: builds/macos-x64
-      - store_artifacts:
-          path: artifacts/with-luck-and-wisdom-macos-arm64.zip
-          destination: builds/macos-arm64
+          path: artifacts/with-luck-and-wisdom-linux-x64.tar.gz
+          destination: builds/with-luck-and-wisdom-linux-x64.tar.gz
 
-  # ---------------------------------------------------------------------------
-  # Android Build
-  # ---------------------------------------------------------------------------
-  build-android:
-    executor: linux-dotnet
+  # =========================================================================
+  # macOS Intel build
+  # =========================================================================
+  build-macos-x64:
+    executor: macos
     steps:
-      - checkout
+      - checkout_and_restore
+      - install_macos_deps
+      - restore_mgcb_tool
+      - attach_workspace:
+          at: .
       - run:
-          name: Install Java 17 and Android SDK
+          name: Publish macOS x64
           command: |
-            apt-get update && apt-get install -y openjdk-17-jdk wget unzip
-            export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-            export PATH="$JAVA_HOME/bin:$PATH"
-            mkdir -p /opt/android-sdk/cmdline-tools
-            cd /opt/android-sdk/cmdline-tools
-            wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-            unzip -q cmdline-tools.zip
-            mv cmdline-tools latest
-            export ANDROID_HOME=/opt/android-sdk
-            export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-            yes | sdkmanager --licenses > /dev/null 2>&1 || true
-            sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1
-            echo 'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64' >> "$BASH_ENV"
-            echo 'export ANDROID_HOME=/opt/android-sdk' >> "$BASH_ENV"
-            echo 'export PATH="$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"' >> "$BASH_ENV"
+            dotnet publish Game.DesktopGL/Game.DesktopGL.csproj \
+              -r osx-x64 \
+              --self-contained \
+              -c Release \
+              -p:BuildContent=false \
+              -p:EnableMGCBItems=false \
+              -o artifacts/osx-x64
+      - run:
+          name: Bundle macOS x64 .app and package artifact
+          command: |
+            APP="artifacts/with-luck-and-wisdom-osx-x64.app"
+            mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+            cp Game.DesktopGL/Info.plist "$APP/Contents/Info.plist"
+            cp -R artifacts/osx-x64/. "$APP/Contents/MacOS/"
+            chmod +x "$APP/Contents/MacOS/Game.DesktopGL"
+            # Ad-hoc sign so the bundle launches on a Mac
+            # (first launch: right-click > Open to bypass Gatekeeper for unsigned builds)
+            codesign --force --deep --sign - "$APP" || true
+            ditto -c -k --keepParent "$APP" artifacts/with-luck-and-wisdom-osx-x64.zip
+      - save_dotnet_cache
+      - store_artifacts:
+          path: artifacts/with-luck-and-wisdom-osx-x64.zip
+          destination: builds/with-luck-and-wisdom-osx-x64.zip
+
+  # =========================================================================
+  # macOS Apple Silicon build
+  # =========================================================================
+  build-macos-arm64:
+    executor: macos
+    steps:
+      - checkout_and_restore
+      - install_macos_deps
+      - restore_mgcb_tool
+      - attach_workspace:
+          at: .
+      - run:
+          name: Publish macOS arm64
+          command: |
+            dotnet publish Game.DesktopGL/Game.DesktopGL.csproj \
+              -r osx-arm64 \
+              --self-contained \
+              -c Release \
+              -p:BuildContent=false \
+              -p:EnableMGCBItems=false \
+              -o artifacts/osx-arm64
+      - run:
+          name: Bundle macOS arm64 .app and package artifact
+          command: |
+            APP="artifacts/with-luck-and-wisdom-osx-arm64.app"
+            mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+            cp Game.DesktopGL/Info.plist "$APP/Contents/Info.plist"
+            cp -R artifacts/osx-arm64/. "$APP/Contents/MacOS/"
+            chmod +x "$APP/Contents/MacOS/Game.DesktopGL"
+            # Ad-hoc sign so the bundle launches on a Mac
+            # (first launch: right-click > Open to bypass Gatekeeper for unsigned builds)
+            codesign --force --deep --sign - "$APP" || true
+            ditto -c -k --keepParent "$APP" artifacts/with-luck-and-wisdom-osx-arm64.zip
+      - save_dotnet_cache
+      - store_artifacts:
+          path: artifacts/with-luck-and-wisdom-osx-arm64.zip
+          destination: builds/with-luck-and-wisdom-osx-arm64.zip
+
+  # =========================================================================
+  # Android build
+  # =========================================================================
+  build-android:
+    executor: dotnet
+    steps:
+      - checkout_and_restore
+      - install_linux_deps
+      - install_android_sdk
       - run:
           name: Install Android workload
           command: dotnet workload install android --skip-manifest-update
       - restore_mgcb_tool
       - attach_workspace:
           at: .
-      - restore_cache:
-          keys:
-            - dotnet-restore-android-v5-{{ checksum "Game.Android/Game.Android.csproj" }}
-            - dotnet-restore-android-v5-
       - run:
-          name: Restore NuGet packages
-          command: dotnet restore Game.Android/Game.Android.csproj
-      - save_cache:
-          key: dotnet-restore-android-v5-{{ checksum "Game.Android/Game.Android.csproj" }}
-          paths:
-            - ~/.nuget/packages
-            - ~/.android
-      - run:
-          name: Build Android APK
+          name: Publish Android arm64 (unsigned APK)
           command: |
             dotnet publish Game.Android/Game.Android.csproj \
-              -c Release \
               -r android-arm64 \
-              -o artifacts/android \
-              /p:AndroidPackageType=apk
+              --self-contained \
+              -c Release \
+              -o artifacts/android-arm64
       - run:
-          name: Find and copy APK
+          name: Publish Android x64 (for emulator testing)
           command: |
-            find artifacts/android -name "*.apk" -exec cp {} artifacts/with-luck-and-wisdom.apk \;
+            dotnet publish Game.Android/Game.Android.csproj \
+              -r android-x64 \
+              --self-contained \
+              -c Release \
+              -o artifacts/android-x64
+      - run:
+          name: Package Android artifacts
+          command: |
+            cd artifacts/android-arm64
+            zip -r ../with-luck-and-wisdom-android-arm64.zip .
+            cd ../android-x64
+            zip -r ../with-luck-and-wisdom-android-x64.zip .
+      - save_dotnet_cache
       - store_artifacts:
-          path: artifacts/with-luck-and-wisdom.apk
-          destination: builds/android
+          path: artifacts/with-luck-and-wisdom-android-arm64.zip
+          destination: builds/with-luck-and-wisdom-android-arm64.zip
+      - store_artifacts:
+          path: artifacts/with-luck-and-wisdom-android-x64.zip
+          destination: builds/with-luck-and-wisdom-android-x64.zip
 
-  # ---------------------------------------------------------------------------
-  # iOS Build (unsigned) - content pre-built on Linux
-  # ---------------------------------------------------------------------------
+  # =========================================================================
+  # iOS build (unsigned)
+  # =========================================================================
   build-ios:
-    executor: macos-build
+    executor: macos
     steps:
-      - checkout
+      - checkout_and_restore
+      - install_macos_deps
       - run:
-          name: Install .NET SDK 9.0 and iOS workload
-          command: |
-            curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
-            chmod +x dotnet-install.sh
-            ./dotnet-install.sh --channel 9.0 --install-dir /Users/distiller/.dotnet
-            /Users/distiller/.dotnet/dotnet workload install ios --skip-manifest-update
+          name: Install iOS workload
+          command: dotnet workload install ios --skip-manifest-update
       - restore_mgcb_tool
       - attach_workspace:
           at: .
-      - restore_cache:
-          keys:
-            - dotnet-restore-ios-v5-{{ checksum "Game.iOS/Game.iOS.csproj" }}
-            - dotnet-restore-ios-v5-
       - run:
-          name: Restore NuGet packages
-          command: /Users/distiller/.dotnet/dotnet restore Game.iOS/Game.iOS.csproj
-      - save_cache:
-          key: dotnet-restore-ios-v5-{{ checksum "Game.iOS/Game.iOS.csproj" }}
-          paths:
-            - ~/.nuget/packages
-      - run:
-          name: Build iOS (unsigned)
+          name: Publish iOS arm64 (unsigned)
           command: |
-            /Users/distiller/.dotnet/dotnet publish Game.iOS/Game.iOS.csproj \
-              -c Release \
+            dotnet publish Game.iOS/Game.iOS.csproj \
               -r ios-arm64 \
-              -o artifacts/ios \
+              --self-contained \
+              -c Release \
               -p:BuildContent=false \
               -p:EnableMGCBItems=false \
-              /p:BuildIpa=true \
-              /p:CodesignKey="-" \
-              /p:CodesignProvision="-"
+              -p:EnableCodeSigning=false \
+              -p:CodesignKey="" \
+              -o artifacts/ios-arm64
       - run:
-          name: Find and copy IPA
+          name: Package iOS artifact
           command: |
-            find artifacts/ios -name "*.ipa" -exec cp {} artifacts/with-luck-and-wisdom-unsigned.ipa \;
+            cd artifacts/ios-arm64
+            zip -r ../with-luck-and-wisdom-ios-arm64.zip .
+      - save_dotnet_cache
       - store_artifacts:
-          path: artifacts/with-luck-and-wisdom-unsigned.ipa
-          destination: builds/ios
+          path: artifacts/with-luck-and-wisdom-ios-arm64.zip
+          destination: builds/with-luck-and-wisdom-ios-arm64.zip
 
-# =============================================================================
+# ---------------------------------------------------------------------------
 # Workflows
-# =============================================================================
+# ---------------------------------------------------------------------------
 workflows:
-  build-all-platforms:
+  version: 2
+  build-and-release:
     jobs:
       - build-content
-      - build-desktop-linux:
+      - build-windows:
           requires:
             - build-content
-      - build-desktop-macos:
+      - build-linux:
           requires:
             - build-content
-      - build-desktop-windows:
+      - build-macos-x64:
+          requires:
+            - build-content
+      - build-macos-arm64:
           requires:
             - build-content
       - build-android:
@@ -326,53 +400,3 @@ workflows:
       - build-ios:
           requires:
             - build-content
-
-  # Trigger on tags for release builds
-  release-build:
-    jobs:
-      - build-content:
-          filters:
-            branches:
-              ignore: /.*/
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
-      - build-desktop-linux:
-          requires:
-            - build-content
-          filters:
-            branches:
-              ignore: /.*/
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
-      - build-desktop-macos:
-          requires:
-            - build-content
-          filters:
-            branches:
-              ignore: /.*/
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
-      - build-desktop-windows:
-          requires:
-            - build-content
-          filters:
-            branches:
-              ignore: /.*/
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
-      - build-android:
-          requires:
-            - build-content
-          filters:
-            branches:
-              ignore: /.*/
-            tags:
-              only: /^v\d+\.\d+\.\d+$/
-      - build-ios:
-          requires:
-            - build-content
-          filters:
-            branches:
-              ignore: /.*/
-            tags:
-              only: /^v\d+\.\d+\.\d+$/

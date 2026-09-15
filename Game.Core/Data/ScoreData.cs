@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Threading.Tasks;
 using withLuckAndWisdomProject.Data;
@@ -16,6 +14,11 @@ namespace withLuckAndWisdomProject.Data
         public int ScoreGet { get; set; }
         public float Distance { get; set; }
         public TimeSpan TimePlay { get;  set; }
+
+        // Parameterless constructor required for JSON deserialization.
+        public Score()
+        {
+        }
 
         public Score(int score, float distance, TimeSpan time)
         {
@@ -62,9 +65,7 @@ namespace withLuckAndWisdomProject.Data
 
             try
             {
-                using FileStream fileStream = new FileStream(SAVE_FILE_NAME, FileMode.Create);
-                BinaryFormatter binaryFormatter = new BinaryFormatter();
-                binaryFormatter.Serialize(fileStream, ScoresTables);
+                FileManager.WriteToJson(SAVE_FILE_NAME, ScoresTables);
             }
             catch (Exception ex)
             {
@@ -77,9 +78,7 @@ namespace withLuckAndWisdomProject.Data
         {
             try
             {
-                using FileStream fileStream = new FileStream(SAVE_FILE_NAME, FileMode.OpenOrCreate);
-                BinaryFormatter binaryFormatter = new BinaryFormatter();
-                ScoresTables = binaryFormatter.Deserialize(fileStream) as List<Score>;
+                ScoresTables = FileManager.ReadFromJson<List<Score>>(SAVE_FILE_NAME) ?? new List<Score>();
             }
             catch (Exception ex)
             {

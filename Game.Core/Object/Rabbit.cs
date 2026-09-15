@@ -7,7 +7,7 @@ using withLuckAndWisdomProject.Screens;
 
 using tainicom.Aether.Physics2D.Dynamics;
 using tainicom.Aether.Physics2D.Dynamics.Contacts;
-using Microsoft.Xna.Framework.Input;
+using withLuckAndWisdomProject.Controls;
 using withLuckAndWisdomProject.Data;
 
 namespace withLuckAndWisdomProject.Object
@@ -77,7 +77,7 @@ namespace withLuckAndWisdomProject.Object
 
         List<Bamboo> _bamboos;
 
-        private MouseState MousePrevious, MouseCurrent;
+        private PointerState _pointerPrevious, _pointerCurrent;
         public RabbitState RabbitState { get; set; }
 
         public Rabbit (Body body, int height, List<Bamboo> bamboos)
@@ -105,13 +105,16 @@ namespace withLuckAndWisdomProject.Object
         {
             // System.Diagnostics.Debug.WriteLine("Body = " + _body.LinearDamping);
 
-            // Get mouse action
-            MousePrevious = MouseCurrent;
-            MouseCurrent = Mouse.GetState();
+            // Get pointer action (mouse on desktop, touch on mobile)
+            _pointerPrevious = _pointerCurrent;
+            _pointerCurrent = PointerHelper.GetState();
+            Point pointerPosition = _pointerCurrent.Position;
+            bool pointerPressed = _pointerCurrent.IsPressed;
+            bool pointerWasPressed = _pointerPrevious.IsPressed;
 
 
-            // Get Mouse point 
-            var mouseRectangle = new Rectangle(MouseCurrent.X + _texture.Width / 2, MouseCurrent.Y + _texture.Height / 2, 1, 1);
+            // Get pointer point 
+            var mouseRectangle = new Rectangle(pointerPosition.X + _texture.Width / 2, pointerPosition.Y + _texture.Height / 2, 1, 1);
 
             // Jumping Sound list
             String[] RandomSound = new string[] { "Jumping2", "Jumping3" };
@@ -122,19 +125,19 @@ namespace withLuckAndWisdomProject.Object
                 _texture = ResourceManager.RabbitHug;
 
                 // Rabbit Draging 
-                if (mouseRectangle.Intersects(Rectangle) && MouseCurrent.LeftButton == ButtonState.Pressed && MousePrevious.LeftButton == ButtonState.Released)
+                if (mouseRectangle.Intersects(Rectangle) && pointerPressed && !pointerWasPressed)
                 {
                     RabbitState = RabbitState.Aiming;
-                    _dragStart = MouseCurrent.Position;
+                    _dragStart = pointerPosition;
 
                 }
             }
             if (RabbitState == RabbitState.Aiming) 
             { 
                 // Rabbit Releasing
-                if (MouseCurrent.LeftButton == ButtonState.Released && MousePrevious.LeftButton == ButtonState.Pressed)
+                if (!pointerPressed && pointerWasPressed)
                 {
-                    _dragEnd = MouseCurrent.Position;
+                    _dragEnd = pointerPosition;
 
                     if(_dragLength < MINIMUM_DRAG_LENGHT)
                     {
@@ -157,13 +160,13 @@ namespace withLuckAndWisdomProject.Object
                 }
 
                 // finding projectile Line
-                _projectile = new Vector2(-1f * (MouseCurrent.X - _dragStart.X), -.5f * (MouseCurrent.Y - _dragStart.Y));
+                _projectile = new Vector2(-1f * (pointerPosition.X - _dragStart.X), -.5f * (pointerPosition.Y - _dragStart.Y));
 
                 // find angle of shooter
                 
-                _dragAngle = (float)Math.Atan2(MouseCurrent.Y - _dragStart.Y, MouseCurrent.X - _dragStart.X);
-                _dragEnd = MouseCurrent.Position;
-                _dragLength = (float)Math.Sqrt((Math.Pow(MouseCurrent.X - _dragStart.X, 2) + Math.Pow(MouseCurrent.Y - _dragStart.Y, 2)));
+                _dragAngle = (float)Math.Atan2(pointerPosition.Y - _dragStart.Y, pointerPosition.X - _dragStart.X);
+                _dragEnd = pointerPosition;
+                _dragLength = (float)Math.Sqrt((Math.Pow(pointerPosition.X - _dragStart.X, 2) + Math.Pow(pointerPosition.Y - _dragStart.Y, 2)));
                     
             }
 
